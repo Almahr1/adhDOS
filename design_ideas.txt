@@ -1,0 +1,1 @@
+# Lossy Filesystem: Old files have a greater chance to randomly get corrupted. This OS is built for ADHD, we don't have time for long term files

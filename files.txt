@@ -1,0 +1,139 @@
+/*
+
+=====================================================================================
+
+Filename:  project_structure.c
+
+Description:  Explanation of the Meaty Skeleton OS Project Structure.
+
+=====================================================================================
+
+This document breaks down the directory layout for the "Meaty Skeleton" OS project.
+
+The structure is designed to be modular, separating the kernel, C library, and
+
+architecture-specific code.
+
+--- Top-Level Directory (myos/) ---
+
+This is the root of your entire OS project.
+
+myos/
+
+├── kernel/      -> The Operating System Kernel
+
+└── libc/        -> Your custom C Standard Library
+
+kernel/: Contains everything that is part of the OS kernel itself—the core
+
+logic, drivers, and boot code.
+
+libc/:   Contains your implementation of the C Standard Library. This is kept
+
+separate so it can eventually be used by both the kernel and
+
+user-space programs.
+
+--- The kernel Directory ---
+
+This directory is dedicated to the kernel's source code.
+
+kernel/
+
+├── arch/
+
+│   └── i386/    -> [1] Architecture-specific KERNEL code (for i386)
+
+├── include/
+
+│   └── kernel/  -> [2] Public KERNEL header files
+
+└── kernel/      -> [3] Generic, architecture-independent KERNEL code
+
+arch/i386/:
+
+This is for code that is specific to the i386 (32-bit x86) processor
+
+architecture.
+
+Examples: boot.S (assembly is always architecture-specific), linker.ld
+
+(memory maps are specific), low-level GDT/IDT setup, and VGA
+
+drivers that interact directly with x86 hardware ports.
+
+include/kernel/:
+
+This folder holds the public API for your kernel. The header files here (.h)
+
+declare functions that other parts of the kernel can use.
+
+Example: tty.h would go here, declaring functions like
+
+terminal_initialize() so that the main kernel file can call it.
+
+kernel/ (the subdirectory):
+
+This identically named subdirectory is for the core, portable logic of your
+
+kernel. This code shouldn't depend on any specific architecture.
+
+Example: Your main kernel.c (containing kernel_main) goes here. Later,
+
+architecture-independent code like a scheduler or a generic
+
+filesystem parser would also go here.
+
+--- The libc Directory ---
+
+This directory is for building your custom C Standard Library (libk.a for the
+
+kernel, and later libc.a for user-space).
+
+libc/
+
+├── arch/
+
+│   └── i386/    -> [A] Architecture-specific LIBRARY code (if any)
+
+├── include/     -> [B] Public LIBRARY header files (stdio.h, string.h)
+
+│   └── sys/
+
+├── stdio/       -> [C] Source code for <stdio.h> functions (printf.c, putchar.c)
+
+├── stdlib/      -> Source code for <stdlib.h> functions (abort.c)
+
+└── string/      -> Source code for <string.h> functions (strlen.c, memcpy.c)
+
+[A] arch/i386/:
+
+For any library functions that need to be implemented differently for the
+
+i386 architecture. Most standard C functions are portable, so this is
+
+often empty at first.
+
+[B] include/:
+
+This holds the header files that your kernel (and later, programs) will
+
+include. It mimics the standard /usr/include directory on a Unix system.
+
+Examples: stdio.h, string.h, stdlib.h. The sys/ subdirectory is for
+
+system-specific headers like sys/cdefs.h.
+
+[C] stdio/, stdlib/, string/:
+
+These folders contain the actual .c source files for your library functions,
+
+organized by the header they belong to. The one-function-per-file
+
+convention is used here for linker optimization.
+
+Example: The source file strlen.c goes inside the string/ directory.
+
+The file printf.c goes inside the stdio/ directory.
+
+*/
