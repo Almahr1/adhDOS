@@ -14,15 +14,15 @@ extern uint32_t kernel_end;
 
 uint8_t get_order(size_t size) {
     if (size <= MIN_BLOCK_SIZE) return 0;
-    
+
     uint8_t order = 0;
     size_t block_size = MIN_BLOCK_SIZE;
-    
+
     while (block_size < size && order <= MAX_ORDER) {
         block_size <<= 1;
         order++;
     }
-    
+
     return (order <= MAX_ORDER) ? order : MAX_ORDER;
 }
 
@@ -45,272 +45,272 @@ static uint32_t get_bitmap_index(uint32_t addr, uint8_t order) {
 
 bool is_block_free(uint32_t addr, uint8_t order) {
     if (order > MAX_ORDER) return false;
-    
+
     uint32_t index = get_bitmap_index(addr, order);
     uint32_t byte_index = index / 8;
-    uint32_t bit_index = index % 8;
-    
-    if (byte_index >= bitmap_sizes[order]) return false;
-    
-    return !(allocation_bitmaps[order][byte_index] & (1 << bit_index));
+  uint32_t bit_index = index % 8;
+
+  if (byte_index >= bitmap_sizes[order]) return false;
+
+  return !(allocation_bitmaps[order][byte_index] & (1 << bit_index));
 }
 
 void set_block_allocated(uint32_t addr, uint8_t order) {
-    if (order > MAX_ORDER) return;
-    
-    uint32_t index = get_bitmap_index(addr, order);
-    uint32_t byte_index = index / 8;
-    uint32_t bit_index = index % 8;
-    
-    if (byte_index < bitmap_sizes[order]) {
-        allocation_bitmaps[order][byte_index] |= (1 << bit_index);
-    }
+  if (order > MAX_ORDER) return;
+
+  uint32_t index = get_bitmap_index(addr, order);
+  uint32_t byte_index = index / 8;
+  uint32_t bit_index = index % 8;
+
+  if (byte_index < bitmap_sizes[order]) {
+    allocation_bitmaps[order][byte_index] |= (1 << bit_index);
+  }
 }
 
 void set_block_free(uint32_t addr, uint8_t order) {
-    if (order > MAX_ORDER) return;
-    
-    uint32_t index = get_bitmap_index(addr, order);
-    uint32_t byte_index = index / 8;
-    uint32_t bit_index = index % 8;
-    
-    if (byte_index < bitmap_sizes[order]) {
-        allocation_bitmaps[order][byte_index] &= ~(1 << bit_index);
-    }
+  if (order > MAX_ORDER) return;
+
+  uint32_t index = get_bitmap_index(addr, order);
+  uint32_t byte_index = index / 8;
+  uint32_t bit_index = index % 8;
+
+  if (byte_index < bitmap_sizes[order]) {
+    allocation_bitmaps[order][byte_index] &= ~(1 << bit_index);
+  }
 }
 
 static void remove_from_free_list(free_block_t *block, uint8_t order) {
-    if (block->prev) {
-        block->prev->next = block->next;
-    } else {
-        free_lists[order] = block->next;
-    }
-    
-    if (block->next) {
-        block->next->prev = block->prev;
-    }
+  if (block->prev) {
+    block->prev->next = block->next;
+  } else {
+    free_lists[order] = block->next;
+  }
+
+  if (block->next) {
+    block->next->prev = block->prev;
+  }
 }
 
 static void add_to_free_list(uint32_t addr, uint8_t order) {
-    free_block_t *block = (free_block_t*)addr;
-    block->next = free_lists[order];
-    block->prev = NULL;
-    
-    if (free_lists[order]) {
-        free_lists[order]->prev = block;
-    }
-    
-    free_lists[order] = block;
+  free_block_t *block = (free_block_t*)addr;
+  block->next = free_lists[order];
+  block->prev = NULL;
+
+  if (free_lists[order]) {
+    free_lists[order]->prev = block;
+  }
+
+  free_lists[order] = block;
 }
 
 uint32_t pmm_alloc_pages(uint8_t order) {
-    if (order > MAX_ORDER) return 0;
-    
-    for (uint8_t current_order = order; current_order <= MAX_ORDER; current_order++) {
-        if (free_lists[current_order]) {
-            free_block_t *block = free_lists[current_order];
-            uint32_t addr = (uint32_t)block;
-            
-            remove_from_free_list(block, current_order);
-            set_block_allocated(addr, current_order);
-            
-            while (current_order > order) {
-                current_order--;
-                uint32_t buddy_addr = get_buddy_addr(addr, current_order);
-                set_block_free(buddy_addr, current_order);
-                add_to_free_list(buddy_addr, current_order);
-            }
-            
-            set_block_allocated(addr, order);
-            return addr;
-        }
+  if (order > MAX_ORDER) return 0;
+
+  for (uint8_t current_order = order; current_order <= MAX_ORDER; current_order++) {
+    if (free_lists[current_order]) {
+      free_block_t *block = free_lists[current_order];
+      uint32_t addr = (uint32_t)block;
+
+      remove_from_free_list(block, current_order);
+      set_block_allocated(addr, current_order);
+
+      while (current_order > order) {
+        current_order--;
+        uint32_t buddy_addr = get_buddy_addr(addr, current_order);
+        set_block_free(buddy_addr, current_order);
+        add_to_free_list(buddy_addr, current_order);
+      }
+
+      set_block_allocated(addr, order);
+      return addr;
     }
-    
-    return 0;
+  }
+
+  return 0;
 }
 
 void pmm_free_pages(uint32_t addr, uint8_t order) {
-    if (addr < memory_start || addr >= memory_end) return;
-    if (order > MAX_ORDER) return;
-    if (!is_address_aligned(addr, order)) {
-        printf("ERROR: Unaligned free addr=0x%x order=%d\n", addr, order);
-        return;
+  if (addr < memory_start || addr >= memory_end) return;
+  if (order > MAX_ORDER) return;
+  if (!is_address_aligned(addr, order)) {
+    printf("ERROR: Unaligned free addr=0x%x order=%d\n", addr, order);
+    return;
+  }
+
+  // Coalesce with buddy blocks
+  while (order < MAX_ORDER) {
+    uint32_t buddy_addr = get_buddy_addr(addr, order);
+
+    // Check bounds
+    if (buddy_addr < memory_start || buddy_addr >= memory_end) {
+      break;
     }
-    
-    // Coalesce with buddy blocks
-    while (order < MAX_ORDER) {
-        uint32_t buddy_addr = get_buddy_addr(addr, order);
-        
-        // Check bounds
-        if (buddy_addr < memory_start || buddy_addr >= memory_end) {
-            break;
-        }
-        
-        // Check if buddy is free in bitmap
-        if (!is_block_free(buddy_addr, order)) {
-            break;
-        }
-        
-        // Remove buddy from free list (it should be there if bitmap says it's free)
-        free_block_t *buddy_block = (free_block_t*)buddy_addr;
-        remove_from_free_list(buddy_block, order);
-        
-        // Mark both blocks as allocated in current order
-        set_block_allocated(addr, order);
-        set_block_allocated(buddy_addr, order);
-        
-        // Coalesce into larger block
-        if (addr > buddy_addr) {
-            addr = buddy_addr;
-        }
-        
-        order++;
+
+    // Check if buddy is free in bitmap
+    if (!is_block_free(buddy_addr, order)) {
+      break;
     }
-    
-    // Mark the final coalesced block as free and add to free list
-    set_block_free(addr, order);
-    add_to_free_list(addr, order);
+
+    // Remove buddy from free list (it should be there if bitmap says it's free)
+    free_block_t *buddy_block = (free_block_t*)buddy_addr;
+    remove_from_free_list(buddy_block, order);
+
+    // Mark both blocks as allocated in current order
+    set_block_allocated(addr, order);
+    set_block_allocated(buddy_addr, order);
+
+    // Coalesce into larger block
+    if (addr > buddy_addr) {
+      addr = buddy_addr;
+    }
+
+    order++;
+  }
+
+  // Mark the final coalesced block as free and add to free list
+  set_block_free(addr, order);
+  add_to_free_list(addr, order);
 }
 
 uint32_t pmm_alloc_page(void) {
-    return pmm_alloc_pages(0);
+  return pmm_alloc_pages(0);
 }
 
 void pmm_free_page(uint32_t page_addr) {
-    pmm_free_pages(page_addr, 0);
+  pmm_free_pages(page_addr, 0);
 }
 
 static void pmm_init_region(uint32_t start, uint32_t length) {
-    start = PAGE_ALIGN(start);
-    length = PAGE_ALIGN_DOWN(length);
-    
-    printf("Initializing memory region: 0x%x - 0x%x (%d MB)\n", 
-           start, start + length, length / (1024 * 1024));
-    
-    for (uint32_t addr = start; addr < start + length; addr += MIN_BLOCK_SIZE) {
-        if (addr >= memory_start && addr < memory_end) {
-            pmm_free_pages(addr, 0);
-        }
+  start = PAGE_ALIGN(start);
+  length = PAGE_ALIGN_DOWN(length);
+
+  printf("Initializing memory region: 0x%x - 0x%x (%d MB)\n", 
+         start, start + length, length / (1024 * 1024));
+
+  for (uint32_t addr = start; addr < start + length; addr += MIN_BLOCK_SIZE) {
+    if (addr >= memory_start && addr < memory_end) {
+      pmm_free_pages(addr, 0);
     }
+  }
 }
 
 void memory_init(multiboot_info_t *mboot_info) {
-    printf("Buddy System Memory Manager initialization\n");
+  printf("Buddy System Memory Manager initialization\n");
+
+  if (!(mboot_info->flags & MULTIBOOT_FLAG_MEM)) {
+    printf("ERROR: No basic memory info available!\n");
+    return;
+  }
+
+  printf("Lower memory: %dKB\n", mboot_info->mem_lower);
+  printf("Upper memory: %dKB\n", mboot_info->mem_upper);
+
+  uint32_t kernel_end_addr = (uint32_t)&kernel_end;
+  memory_start = PAGE_ALIGN(kernel_end_addr);
+  memory_end = 0x1000000 + (mboot_info->mem_upper * 1024);
+
+  total_pages = (memory_end - memory_start) / PAGE_SIZE;
     
-    if (!(mboot_info->flags & MULTIBOOT_FLAG_MEM)) {
-        printf("ERROR: No basic memory info available!\n");
-        return;
+  // Calculate bitmap sizes for each order and allocate them
+  uint32_t total_bitmap_size = 0;
+  for (uint8_t order = 0; order <= MAX_ORDER; order++) {
+    uint32_t blocks_at_order = total_pages >> order; // Divide by 2^order
+    bitmap_sizes[order] = (blocks_at_order + 7) / 8;  // Bits to bytes
+    total_bitmap_size += PAGE_ALIGN(bitmap_sizes[order]);
+  }
+
+  printf("Total bitmap size needed: %d bytes\n", total_bitmap_size);
+
+  // Allocate space for all bitmaps
+  uint8_t *bitmap_start = (uint8_t*)memory_start;
+  memory_start += total_bitmap_size;
+
+  // Set up individual bitmap pointers
+  uint32_t bitmap_offset = 0;
+  for (uint8_t order = 0; order <= MAX_ORDER; order++) {
+    allocation_bitmaps[order] = bitmap_start + bitmap_offset;
+    bitmap_offset += PAGE_ALIGN(bitmap_sizes[order]);
+
+    // Initialize all blocks as allocated (we'll free them later)
+    memset(allocation_bitmaps[order], 0xFF, bitmap_sizes[order]);
+
+    printf("Order %d: %d blocks, bitmap size %d bytes at %p\n", 
+           order, total_pages >> order, bitmap_sizes[order], allocation_bitmaps[order]);
+  }
+
+  for (int i = 0; i <= MAX_ORDER; i++) {
+    free_lists[i] = NULL;
+  }
+
+  printf("Memory range: 0x%x - 0x%x\n", memory_start, memory_end);
+  printf("Total bitmap size: %d bytes\n", total_bitmap_size);
+    
+  if (!(mboot_info->flags & MULTIBOOT_FLAG_MMAP)) {
+    printf("No memory map, using basic info\n");
+    if (memory_end > memory_start) {
+      pmm_init_region(memory_start, memory_end - memory_start);
     }
-    
-    printf("Lower memory: %dKB\n", mboot_info->mem_lower);
-    printf("Upper memory: %dKB\n", mboot_info->mem_upper);
-    
-    uint32_t kernel_end_addr = (uint32_t)&kernel_end;
-    memory_start = PAGE_ALIGN(kernel_end_addr);
-    memory_end = 0x1000000 + (mboot_info->mem_upper * 1024);
-    
-    total_pages = (memory_end - memory_start) / PAGE_SIZE;
-    
-    // Calculate bitmap sizes for each order and allocate them
-    uint32_t total_bitmap_size = 0;
-    for (uint8_t order = 0; order <= MAX_ORDER; order++) {
-        uint32_t blocks_at_order = total_pages >> order; // Divide by 2^order
-        bitmap_sizes[order] = (blocks_at_order + 7) / 8;  // Bits to bytes
-        total_bitmap_size += PAGE_ALIGN(bitmap_sizes[order]);
-    }
-    
-    printf("Total bitmap size needed: %d bytes\n", total_bitmap_size);
-    
-    // Allocate space for all bitmaps
-    uint8_t *bitmap_start = (uint8_t*)memory_start;
-    memory_start += total_bitmap_size;
-    
-    // Set up individual bitmap pointers
-    uint32_t bitmap_offset = 0;
-    for (uint8_t order = 0; order <= MAX_ORDER; order++) {
-        allocation_bitmaps[order] = bitmap_start + bitmap_offset;
-        bitmap_offset += PAGE_ALIGN(bitmap_sizes[order]);
-        
-        // Initialize all blocks as allocated (we'll free them later)
-        memset(allocation_bitmaps[order], 0xFF, bitmap_sizes[order]);
-        
-        printf("Order %d: %d blocks, bitmap size %d bytes at %p\n", 
-               order, total_pages >> order, bitmap_sizes[order], allocation_bitmaps[order]);
-    }
-    
-    for (int i = 0; i <= MAX_ORDER; i++) {
-        free_lists[i] = NULL;
-    }
-    
-    printf("Memory range: 0x%x - 0x%x\n", memory_start, memory_end);
-    printf("Total bitmap size: %d bytes\n", total_bitmap_size);
-    
-    if (!(mboot_info->flags & MULTIBOOT_FLAG_MMAP)) {
-        printf("No memory map, using basic info\n");
-        if (memory_end > memory_start) {
-            pmm_init_region(memory_start, memory_end - memory_start);
+    return;
+  }
+
+  multiboot_mmap_entry_t *mmap = (multiboot_mmap_entry_t*)mboot_info->mmap_addr;
+  multiboot_mmap_entry_t *mmap_end_ptr = (multiboot_mmap_entry_t*)
+      (mboot_info->mmap_addr + mboot_info->mmap_length);
+
+  printf("Memory Map:\n");
+  while (mmap < mmap_end_ptr) {
+    printf("  0x%08x-0x%08x: %s\n",
+           (uint32_t)mmap->addr,
+           (uint32_t)(mmap->addr + mmap->len - 1),
+           (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) ? "Available" : "Reserved");
+
+    if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE && mmap->addr >= 0x100000) {
+      uint32_t region_start = (uint32_t)mmap->addr;
+      uint32_t region_length = (uint32_t)mmap->len;
+
+      if (region_start < memory_start) {
+        if (region_start + region_length > memory_start) {
+          region_length -= (memory_start - region_start);
+          region_start = memory_start;
+        } else {
+          region_length = 0;
         }
-        return;
+      }
+
+      if (region_start + region_length > memory_end) {
+        region_length = memory_end - region_start;
+      }
+
+      if (region_length > 0) {
+        pmm_init_region(region_start, region_length);
+      }
     }
-    
-    multiboot_mmap_entry_t *mmap = (multiboot_mmap_entry_t*)mboot_info->mmap_addr;
-    multiboot_mmap_entry_t *mmap_end_ptr = (multiboot_mmap_entry_t*)
-        (mboot_info->mmap_addr + mboot_info->mmap_length);
-    
-    printf("Memory Map:\n");
-    while (mmap < mmap_end_ptr) {
-        printf("  0x%08x-0x%08x: %s\n",
-               (uint32_t)mmap->addr,
-               (uint32_t)(mmap->addr + mmap->len - 1),
-               (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) ? "Available" : "Reserved");
-        
-        if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE && mmap->addr >= 0x100000) {
-            uint32_t region_start = (uint32_t)mmap->addr;
-            uint32_t region_length = (uint32_t)mmap->len;
-            
-            if (region_start < memory_start) {
-                if (region_start + region_length > memory_start) {
-                    region_length -= (memory_start - region_start);
-                    region_start = memory_start;
-                } else {
-                    region_length = 0;
-                }
-            }
-            
-            if (region_start + region_length > memory_end) {
-                region_length = memory_end - region_start;
-            }
-            
-            if (region_length > 0) {
-                pmm_init_region(region_start, region_length);
-            }
-        }
-        
-        mmap = (multiboot_mmap_entry_t*)((uint32_t)mmap + mmap->size + sizeof(mmap->size));
-    }
-    
-    // Initialize slab allocator
-    slab_init();
+
+    mmap = (multiboot_mmap_entry_t*)((uint32_t)mmap + mmap->size + sizeof(mmap->size));
+  }
+
+  // Initialize slab allocator
+  slab_init();
 }
 
 uint32_t pmm_get_total_memory(void) {
-    return total_pages * PAGE_SIZE;
+  return total_pages * PAGE_SIZE;
 }
 
 uint32_t pmm_get_free_memory(void) {
-    uint32_t free_pages = 0;
-    
-    for (uint8_t order = 0; order <= MAX_ORDER; order++) {
-        free_block_t *block = free_lists[order];
-        uint32_t pages_per_block = 1 << order;
-        
-        while (block) {
-            free_pages += pages_per_block;
-            block = block->next;
-        }
+  uint32_t free_pages = 0;
+
+  for (uint8_t order = 0; order <= MAX_ORDER; order++) {
+    free_block_t *block = free_lists[order];
+    uint32_t pages_per_block = 1 << order;
+
+    while (block) {
+      free_pages += pages_per_block;
+      block = block->next;
     }
-    
-    return free_pages * PAGE_SIZE;
+  }
+
+  return free_pages * PAGE_SIZE;
 }
 
 // Slab allocator implementation
@@ -322,371 +322,371 @@ static alloc_header_t *allocation_list = NULL;
 static size_t cache_sizes[] = {8, 16, 32, 64, 96, 128, 192, 256, 512, 1024, 2048, 0};
 
 void slab_init(void) {
-    cache_count = 0;
-    allocation_list = NULL;
-    
-    // Create standard caches
-    for (int i = 0; cache_sizes[i] != 0; i++) {
-        char name[32];
-        size_t size = cache_sizes[i];
-        
-        strcpy(name, "kmalloc-");
-        
-        // Generate proper cache names based on size
-        if (size < 10) {
-            name[8] = '0' + (char)size;
-            name[9] = '\0';
-        } else if (size < 100) {
-            name[8] = '0' + (char)(size / 10);
-            name[9] = '0' + (char)(size % 10);
-            name[10] = '\0';
-        } else if (size < 1000) {
-            name[8] = '0' + (char)(size / 100);
-            name[9] = '0' + (char)((size / 10) % 10);
-            name[10] = '0' + (char)(size % 10);
-            name[11] = '\0';
-        } else {
-            // For sizes >= 1000, use size in KB with 'k' suffix
-            size_t kb = size / 1024;
-            name[8] = '0' + (char)kb;
-            name[9] = 'k';
-            name[10] = '\0';
-        }
-        
-        caches[cache_count] = cache_create(name, cache_sizes[i]);
-        if (caches[cache_count]) {
-            cache_count++;
-        }
+  cache_count = 0;
+  allocation_list = NULL;
+
+  // Create standard caches
+  for (int i = 0; cache_sizes[i] != 0; i++) {
+    char name[32];
+    size_t size = cache_sizes[i];
+
+    strcpy(name, "kmalloc-");
+
+    // Generate proper cache names based on size
+    if (size < 10) {
+      name[8] = '0' + (char)size;
+      name[9] = '\0';
+    } else if (size < 100) {
+      name[8] = '0' + (char)(size / 10);
+      name[9] = '0' + (char)(size % 10);
+      name[10] = '\0';
+    } else if (size < 1000) {
+      name[8] = '0' + (char)(size / 100);
+      name[9] = '0' + (char)((size / 10) % 10);
+      name[10] = '0' + (char)(size % 10);
+      name[11] = '\0';
+    } else {
+      // For sizes >= 1000, use size in KB with 'k' suffix
+      size_t kb = size / 1024;
+      name[8] = '0' + (char)kb;
+      name[9] = 'k';
+      name[10] = '\0';
     }
-    
-    printf("Slab allocator initialized with %d caches\n", cache_count);
+
+    caches[cache_count] = cache_create(name, cache_sizes[i]);
+    if (caches[cache_count]) {
+      cache_count++;
+    }
+  }
+
+  printf("Slab allocator initialized with %d caches\n", cache_count);
 }
 
 cache_t *cache_create(const char *name, size_t object_size) {
-    // Reject zero-sized objects
-    if (object_size == 0) return NULL;
-    
-    // Ensure there's room for at least one object plus slab header
-    // Use effective object size (minimum sizeof(void*) for free list pointers)
-    size_t effective_object_size = object_size < sizeof(void*) ? sizeof(void*) : object_size;
-    if (sizeof(slab_t) + effective_object_size > PAGE_SIZE) return NULL;
-    
-    cache_t *cache = (cache_t*)pmm_alloc_page();
-    if (!cache) return NULL;
-    
-    memset(cache, 0, sizeof(cache_t));
-    cache->object_size = object_size;
-    // Calculate objects per slab using effective object size
-    cache->objects_per_slab = (PAGE_SIZE - sizeof(slab_t)) / effective_object_size;
-    strncpy(cache->name, name, sizeof(cache->name) - 1);
-    
-    printf("Created cache '%s' - object_size=%d, objects_per_slab=%d\n", 
-           name, (int)object_size, (int)cache->objects_per_slab);
-    
-    return cache;
+  // Reject zero-sized objects
+  if (object_size == 0) return NULL;
+
+  // Ensure there's room for at least one object plus slab header
+  // Use effective object size (minimum sizeof(void*) for free list pointers)
+  size_t effective_object_size = object_size < sizeof(void*) ? sizeof(void*) : object_size;
+  if (sizeof(slab_t) + effective_object_size > PAGE_SIZE) return NULL;
+
+  cache_t *cache = (cache_t*)pmm_alloc_page();
+  if (!cache) return NULL;
+
+  memset(cache, 0, sizeof(cache_t));
+  cache->object_size = object_size;
+  // Calculate objects per slab using effective object size
+  cache->objects_per_slab = (PAGE_SIZE - sizeof(slab_t)) / effective_object_size;
+  strncpy(cache->name, name, sizeof(cache->name) - 1);
+
+  printf("Created cache '%s' - object_size=%d, objects_per_slab=%d\n", 
+         name, (int)object_size, (int)cache->objects_per_slab);
+
+  return cache;
 }
 
 static slab_t *slab_create(cache_t *cache) {
-    uint32_t page = pmm_alloc_page();
-    if (!page) return NULL;
-    
-    slab_t *slab = (slab_t*)page;
-    slab->magic = MAGIC_ALLOC;
-    slab->total_count = cache->objects_per_slab;
-    slab->free_count = cache->objects_per_slab;
-    slab->next = NULL;
-    slab->prev = NULL;
-    
-    // Set up free list within the slab
-    char *obj_start = (char*)slab + sizeof(slab_t);
-    slab->free_list = obj_start;
-    
-    // Chain all objects together using effective object size for spacing
-    size_t effective_object_size = cache->object_size < sizeof(void*) ? sizeof(void*) : cache->object_size;
-    for (size_t i = 0; i < cache->objects_per_slab - 1; i++) {
-        void **current = (void**)(obj_start + i * effective_object_size);
-        *current = obj_start + (i + 1) * effective_object_size;
-    }
-    // Last object points to NULL
-    void **last = (void**)(obj_start + (cache->objects_per_slab - 1) * effective_object_size);
-    *last = NULL;
-    
-    cache->total_slabs++;
-    cache->total_objects += cache->objects_per_slab;
-    
-    return slab;
+  uint32_t page = pmm_alloc_page();
+  if (!page) return NULL;
+
+  slab_t *slab = (slab_t*)page;
+  slab->magic = MAGIC_ALLOC;
+  slab->total_count = cache->objects_per_slab;
+  slab->free_count = cache->objects_per_slab;
+  slab->next = NULL;
+  slab->prev = NULL;
+
+  // Set up free list within the slab
+  char *obj_start = (char*)slab + sizeof(slab_t);
+  slab->free_list = obj_start;
+
+  // Chain all objects together using effective object size for spacing
+  size_t effective_object_size = cache->object_size < sizeof(void*) ? sizeof(void*) : cache->object_size;
+  for (size_t i = 0; i < cache->objects_per_slab - 1; i++) {
+    void **current = (void**)(obj_start + i * effective_object_size);
+    *current = obj_start + (i + 1) * effective_object_size;
+  }
+  // Last object points to NULL
+  void **last = (void**)(obj_start + (cache->objects_per_slab - 1) * effective_object_size);
+  *last = NULL;
+
+  cache->total_slabs++;
+  cache->total_objects += cache->objects_per_slab;
+
+  return slab;
 }
 
 void *cache_alloc(cache_t *cache) {
-    if (!cache) return NULL;
-    
-    slab_t *slab = cache->partial_slabs;
-    
-    // No partial slabs, try to get from empty slabs
-    if (!slab) {
-        slab = cache->empty_slabs;
-        if (slab) {
-            // Move from empty to partial
-            if (slab->next) slab->next->prev = slab->prev;
-            if (slab->prev) slab->prev->next = slab->next;
-            else cache->empty_slabs = slab->next;
-            
-            slab->next = cache->partial_slabs;
-            slab->prev = NULL;
-            if (cache->partial_slabs) cache->partial_slabs->prev = slab;
-            cache->partial_slabs = slab;
-        }
+  if (!cache) return NULL;
+
+  slab_t *slab = cache->partial_slabs;
+
+  // No partial slabs, try to get from empty slabs
+  if (!slab) {
+    slab = cache->empty_slabs;
+    if (slab) {
+      // Move from empty to partial
+      if (slab->next) slab->next->prev = slab->prev;
+      if (slab->prev) slab->prev->next = slab->next;
+      else cache->empty_slabs = slab->next;
+
+      slab->next = cache->partial_slabs;
+      slab->prev = NULL;
+      if (cache->partial_slabs) cache->partial_slabs->prev = slab;
+      cache->partial_slabs = slab;
     }
-    
-    // Still no slab, create new one
-    if (!slab) {
-        slab = slab_create(cache);
-        if (!slab) return NULL;
-        
-        slab->next = cache->partial_slabs;
-        if (cache->partial_slabs) cache->partial_slabs->prev = slab;
-        cache->partial_slabs = slab;
-    }
-    
-    // Allocate object from slab
-    void *obj = slab->free_list;
-    if (!obj) return NULL;
-    
-    slab->free_list = *(void**)obj;
-    slab->free_count--;
-    cache->allocated_objects++;
-    
-    // If slab is now full, move to full list
-    if (slab->free_count == 0) {
-        // Remove from partial list
-        if (slab->next) slab->next->prev = slab->prev;
-        if (slab->prev) slab->prev->next = slab->next;
-        else cache->partial_slabs = slab->next;
-        
-        // Add to full list
-        slab->next = cache->full_slabs;
-        slab->prev = NULL;
-        if (cache->full_slabs) cache->full_slabs->prev = slab;
-        cache->full_slabs = slab;
-    }
-    
-    #if MEMORY_DEBUG
-    memset(obj, POISON_BYTE, cache->object_size);
-    #endif
-    
-    return obj;
+  }
+
+  // Still no slab, create new one
+  if (!slab) {
+    slab = slab_create(cache);
+    if (!slab) return NULL;
+
+    slab->next = cache->partial_slabs;
+    if (cache->partial_slabs) cache->partial_slabs->prev = slab;
+    cache->partial_slabs = slab;
+  }
+
+  // Allocate object from slab
+  void *obj = slab->free_list;
+  if (!obj) return NULL;
+
+  slab->free_list = *(void**)obj;
+  slab->free_count--;
+  cache->allocated_objects++;
+
+  // If slab is now full, move to full list
+  if (slab->free_count == 0) {
+    // Remove from partial list
+    if (slab->next) slab->next->prev = slab->prev;
+    if (slab->prev) slab->prev->next = slab->next;
+    else cache->partial_slabs = slab->next;
+
+    // Add to full list
+    slab->next = cache->full_slabs;
+    slab->prev = NULL;
+    if (cache->full_slabs) cache->full_slabs->prev = slab;
+    cache->full_slabs = slab;
+  }
+
+  #if MEMORY_DEBUG
+  memset(obj, POISON_BYTE, cache->object_size);
+  #endif
+
+  return obj;
 }
 
 void cache_free(cache_t *cache, void *ptr) {
-    if (!cache || !ptr) return;
-    
-    // Find which slab contains this pointer
-    uint32_t page_addr = (uint32_t)ptr & ~(PAGE_SIZE - 1);
-    slab_t *slab = (slab_t*)page_addr;
-    
-    if (slab->magic != MAGIC_ALLOC) {
-        printf("ERROR: Invalid slab magic 0x%x in cache_free! ptr=%p\n", slab->magic, ptr);
-        return;
-    }
-    
-    // Validate pointer is within slab bounds
-    char *slab_start = (char*)slab + sizeof(slab_t);
-    size_t effective_object_size = cache->object_size < sizeof(void*) ? sizeof(void*) : cache->object_size;
-    char *slab_end = slab_start + (cache->objects_per_slab * effective_object_size);
-    
-    if ((char*)ptr < slab_start || (char*)ptr >= slab_end) {
-        printf("ERROR: Pointer %p out of slab bounds [%p, %p) for cache '%s'\n", 
-               ptr, slab_start, slab_end, cache->name);
-        return;
-    }
-    
-    // Validate pointer alignment
-    uint32_t offset = (char*)ptr - slab_start;
-    if (offset % effective_object_size != 0) {
-        printf("ERROR: Misaligned pointer %p in cache '%s' (offset=%d, obj_size=%zu)\n",
-               ptr, cache->name, offset, effective_object_size);
-        return;
-    }
-    
-    bool was_full = (slab->free_count == 0);
-    
-    // Add object back to free list
-    *(void**)ptr = slab->free_list;
-    slab->free_list = ptr;
-    slab->free_count++;
-    cache->allocated_objects--;
-    
-    #if MEMORY_DEBUG
-    if (cache->object_size > sizeof(void*)) {
-        memset((char*)ptr + sizeof(void*), POISON_BYTE, cache->object_size - sizeof(void*));
-    }
-    #endif
-    
-    // If slab was full, move to partial list
-    if (was_full) {
-        // Remove from full list
-        if (slab->next) slab->next->prev = slab->prev;
-        if (slab->prev) slab->prev->next = slab->next;
-        else cache->full_slabs = slab->next;
-        
-        // Add to partial list
-        slab->next = cache->partial_slabs;
-        slab->prev = NULL;
-        if (cache->partial_slabs) cache->partial_slabs->prev = slab;
-        cache->partial_slabs = slab;
-    }
-    
-    // If slab is now empty, move to empty list
-    if (slab->free_count == cache->objects_per_slab) {
-        // Remove from partial list
-        if (slab->next) slab->next->prev = slab->prev;
-        if (slab->prev) slab->prev->next = slab->next;
-        else cache->partial_slabs = slab->next;
-        
-        // Add to empty list
-        slab->next = cache->empty_slabs;
-        slab->prev = NULL;
-        if (cache->empty_slabs) cache->empty_slabs->prev = slab;
-        cache->empty_slabs = slab;
-    }
+  if (!cache || !ptr) return;
+
+  // Find which slab contains this pointer
+  uint32_t page_addr = (uint32_t)ptr & ~(PAGE_SIZE - 1);
+  slab_t *slab = (slab_t*)page_addr;
+
+  if (slab->magic != MAGIC_ALLOC) {
+    printf("ERROR: Invalid slab magic 0x%x in cache_free! ptr=%p\n", slab->magic, ptr);
+    return;
+  }
+
+  // Validate pointer is within slab bounds
+  char *slab_start = (char*)slab + sizeof(slab_t);
+  size_t effective_object_size = cache->object_size < sizeof(void*) ? sizeof(void*) : cache->object_size;
+  char *slab_end = slab_start + (cache->objects_per_slab * effective_object_size);
+
+  if ((char*)ptr < slab_start || (char*)ptr >= slab_end) {
+    printf("ERROR: Pointer %p out of slab bounds [%p, %p) for cache '%s'\n", 
+           ptr, slab_start, slab_end, cache->name);
+    return;
+  }
+
+  // Validate pointer alignment
+  uint32_t offset = (char*)ptr - slab_start;
+  if (offset % effective_object_size != 0) {
+    printf("ERROR: Misaligned pointer %p in cache '%s' (offset=%d, obj_size=%zu)\n",
+           ptr, cache->name, offset, effective_object_size);
+    return;
+  }
+
+  bool was_full = (slab->free_count == 0);
+
+  // Add object back to free list
+  *(void**)ptr = slab->free_list;
+  slab->free_list = ptr;
+  slab->free_count++;
+  cache->allocated_objects--;
+
+  #if MEMORY_DEBUG
+  if (cache->object_size > sizeof(void*)) {
+    memset((char*)ptr + sizeof(void*), POISON_BYTE, cache->object_size - sizeof(void*));
+  }
+  #endif
+
+  // If slab was full, move to partial list
+  if (was_full) {
+    // Remove from full list
+    if (slab->next) slab->next->prev = slab->prev;
+    if (slab->prev) slab->prev->next = slab->next;
+    else cache->full_slabs = slab->next;
+
+    // Add to partial list
+    slab->next = cache->partial_slabs;
+    slab->prev = NULL;
+    if (cache->partial_slabs) cache->partial_slabs->prev = slab;
+    cache->partial_slabs = slab;
+  }
+
+  // If slab is now empty, move to empty list
+  if (slab->free_count == cache->objects_per_slab) {
+    // Remove from partial list
+    if (slab->next) slab->next->prev = slab->prev;
+    if (slab->prev) slab->prev->next = slab->next;
+    else cache->partial_slabs = slab->next;
+
+    // Add to empty list
+    slab->next = cache->empty_slabs;
+    slab->prev = NULL;
+    if (cache->empty_slabs) cache->empty_slabs->prev = slab;
+    cache->empty_slabs = slab;
+  }
 }
 
 static cache_t *find_cache(size_t size) {
-    for (int i = 0; i < cache_count; i++) {
-        if (caches[i] && caches[i]->object_size >= size) {
-            return caches[i];
-        }
+  for (int i = 0; i < cache_count; i++) {
+    if (caches[i] && caches[i]->object_size >= size) {
+      return caches[i];
     }
-    return NULL;
+  }
+  return NULL;
 }
 
 void *kmalloc(size_t size) {
-    if (size == 0) return NULL;
-    
-    #if MEMORY_DEBUG
-    size_t total_size = size + sizeof(alloc_header_t);
-    #else
-    size_t total_size = size;
-    #endif
-    
-    void *ptr;
-    cache_t *cache = NULL;
-    
-    // Try slab allocator for small objects (up to our largest cache size)
-    if (total_size <= 2048) {
-        cache = find_cache(total_size);
-        if (cache) {
-            ptr = cache_alloc(cache);
-        } else {
-            // No suitable cache found, use buddy allocator
-            uint8_t order = get_order(total_size);
-            uint32_t addr = pmm_alloc_pages(order);
-            ptr = (addr != 0) ? (void*)addr : NULL;
-        }
+  if (size == 0) return NULL;
+
+  #if MEMORY_DEBUG
+  size_t total_size = size + sizeof(alloc_header_t);
+  #else
+  size_t total_size = size;
+  #endif
+
+  void *ptr;
+  cache_t *cache = NULL;
+
+  // Try slab allocator for small objects (up to our largest cache size)
+  if (total_size <= 2048) {
+    cache = find_cache(total_size);
+    if (cache) {
+      ptr = cache_alloc(cache);
     } else {
-        // Use buddy allocator for large objects (> 2048 bytes)
-        uint8_t order = get_order(total_size);
-        uint32_t addr = pmm_alloc_pages(order);
-        ptr = (addr != 0) ? (void*)addr : NULL;
+      // No suitable cache found, use buddy allocator
+      uint8_t order = get_order(total_size);
+      uint32_t addr = pmm_alloc_pages(order);
+      ptr = (addr != 0) ? (void*)addr : NULL;
     }
-    
-    #if MEMORY_DEBUG
-    if (ptr) {
-        alloc_header_t *header = (alloc_header_t*)ptr;
-        header->magic = MAGIC_ALLOC;
-        header->size = size;
-        header->cache = cache;
-        header->next = allocation_list;
-        header->prev = NULL;
-        
-        if (allocation_list) {
-            allocation_list->prev = header;
-        }
-        allocation_list = header;
-        
-        return (char*)ptr + sizeof(alloc_header_t);
+  } else {
+    // Use buddy allocator for large objects (> 2048 bytes)
+    uint8_t order = get_order(total_size);
+    uint32_t addr = pmm_alloc_pages(order);
+    ptr = (addr != 0) ? (void*)addr : NULL;
+  }
+
+  #if MEMORY_DEBUG
+  if (ptr) {
+    alloc_header_t *header = (alloc_header_t*)ptr;
+    header->magic = MAGIC_ALLOC;
+    header->size = size;
+    header->cache = cache;
+    header->next = allocation_list;
+    header->prev = NULL;
+
+    if (allocation_list) {
+      allocation_list->prev = header;
     }
-    #endif
-    
-    return ptr;
+    allocation_list = header;
+
+    return (char*)ptr + sizeof(alloc_header_t);
+  }
+  #endif
+
+  return ptr;
 }
 
 void *kcalloc(size_t count, size_t size) {
-    size_t user_size = count * size;
-    void *ptr = kmalloc(user_size);
-    
-    if (ptr) {
-        memset(ptr, 0, user_size);
-    }
-    
-    return ptr;
+  size_t user_size = count * size;
+  void *ptr = kmalloc(user_size);
+
+  if (ptr) {
+    memset(ptr, 0, user_size);
+  }
+
+  return ptr;
 }
 
 void *krealloc(void *ptr, size_t size) {
-    if (!ptr) return kmalloc(size);
-    if (size == 0) {
-        kfree(ptr);
-        return NULL;
-    }
-    
-    #if MEMORY_DEBUG
-    alloc_header_t *header = (alloc_header_t*)((char*)ptr - sizeof(alloc_header_t));
-    if (header->magic != MAGIC_ALLOC) {
-        printf("ERROR: Invalid magic in krealloc!\n");
-        return NULL;
-    }
-    
-    size_t old_size = header->size;
-    #else
-    size_t old_size = size; // Best guess without debug info
-    #endif
-    
-    void *new_ptr = kmalloc(size);
-    if (new_ptr && ptr) {
-        memcpy(new_ptr, ptr, (old_size < size) ? old_size : size);
-        kfree(ptr);
-    }
-    
-    return new_ptr;
+  if (!ptr) return kmalloc(size);
+  if (size == 0) {
+    kfree(ptr);
+    return NULL;
+  }
+
+  #if MEMORY_DEBUG
+  alloc_header_t *header = (alloc_header_t*)((char*)ptr - sizeof(alloc_header_t));
+  if (header->magic != MAGIC_ALLOC) {
+    printf("ERROR: Invalid magic in krealloc!\n");
+    return NULL;
+  }
+
+  size_t old_size = header->size;
+  #else
+  size_t old_size = size; // Best guess without debug info
+  #endif
+
+  void *new_ptr = kmalloc(size);
+  if (new_ptr && ptr) {
+    memcpy(new_ptr, ptr, (old_size < size) ? old_size : size);
+    kfree(ptr);
+  }
+
+  return new_ptr;
 }
 
 void kfree(void *ptr) {
-    if (!ptr) return;
-    
-    #if MEMORY_DEBUG
-    alloc_header_t *header = (alloc_header_t*)((char*)ptr - sizeof(alloc_header_t));
-    
-    if (header->magic != MAGIC_ALLOC) {
-        printf("ERROR: Invalid magic in kfree! ptr=%p\n", ptr);
-        return;
-    }
-    
-    // Remove from allocation list
-    if (header->next) header->next->prev = header->prev;
-    if (header->prev) header->prev->next = header->next;
-    else allocation_list = header->next;
-    
-    // Poison the allocation
-    memset(ptr, POISON_BYTE, header->size);
-    header->magic = MAGIC_FREE;
-    
-    if (header->cache) {
-        cache_free(header->cache, header);
-    } else {
-        uint32_t addr = (uint32_t)header;
-        uint8_t order = get_order(header->size + sizeof(alloc_header_t));
-        pmm_free_pages(addr, order);
-    }
-    #else
-    // Without debug info, assume it's from slab if aligned to page
-    uint32_t addr = (uint32_t)ptr;
-    if ((addr & (PAGE_SIZE - 1)) != 0) {
-        // Likely from slab, but we don't know which cache
-        printf("WARNING: Cannot free slab object without debug info\n");
-    } else {
-        pmm_free_pages(addr, 0);
-    }
-    #endif
+  if (!ptr) return;
+
+  #if MEMORY_DEBUG
+  alloc_header_t *header = (alloc_header_t*)((char*)ptr - sizeof(alloc_header_t));
+
+  if (header->magic != MAGIC_ALLOC) {
+    printf("ERROR: Invalid magic in kfree! ptr=%p\n", ptr);
+    return;
+  }
+
+  // Remove from allocation list
+  if (header->next) header->next->prev = header->prev;
+  if (header->prev) header->prev->next = header->next;
+  else allocation_list = header->next;
+
+  // Poison the allocation
+  memset(ptr, POISON_BYTE, header->size);
+  header->magic = MAGIC_FREE;
+
+  if (header->cache) {
+    cache_free(header->cache, header);
+  } else {
+    uint32_t addr = (uint32_t)header;
+    uint8_t order = get_order(header->size + sizeof(alloc_header_t));
+    pmm_free_pages(addr, order);
+  }
+  #else
+  // Without debug info, assume it's from slab if aligned to page
+  uint32_t addr = (uint32_t)ptr;
+  if ((addr & (PAGE_SIZE - 1)) != 0) {
+    // Likely from slab, but we don't know which cache
+    printf("WARNING: Cannot free slab object without debug info\n");
+  } else {
+    pmm_free_pages(addr, 0);
+  }
+  #endif
 }
 
 void memory_print_stats(void) {

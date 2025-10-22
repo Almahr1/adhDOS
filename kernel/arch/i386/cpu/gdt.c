@@ -15,7 +15,7 @@ static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit,
 
   gdt_entries[num].limit_low = (limit & 0xFFFF);
 
-  // Pack the upper 4 bits of limit and the granularity flags into one byte.
+  // Pack the upper 4 bits of limit and the granularity flags into one byte
   gdt_entries[num].granularity = (limit >> 16) & 0x0F;
   gdt_entries[num].granularity |= gran & 0xF0;
 
@@ -28,15 +28,11 @@ void gdt_init(void) {
 
   uint8_t granularity = GDT_GRAN_4K | GDT_GRAN_32BIT;
 
-  gdt_set_gate(0, 0, 0, 0, 0); // Null Segment
-  gdt_set_gate(1, 0, 0xFFFFFFFF, GDT_CODE_PL0,
-               granularity); // Kernel Code Segment
-  gdt_set_gate(2, 0, 0xFFFFFFFF, GDT_DATA_PL0,
-               granularity); // Kernel Data Segment
-  gdt_set_gate(3, 0, 0xFFFFFFFF, GDT_CODE_PL3,
-               granularity); // User Code Segment
-  gdt_set_gate(4, 0, 0xFFFFFFFF, GDT_DATA_PL3,
-               granularity); // User Data Segment
+  gdt_set_gate(0, 0, 0, 0, 0);                                    // Null Segment
+  gdt_set_gate(1, 0, 0xFFFFFFFF, GDT_CODE_PL0, granularity);     // Kernel Code Segment
+  gdt_set_gate(2, 0, 0xFFFFFFFF, GDT_DATA_PL0, granularity);     // Kernel Data Segment
+  gdt_set_gate(3, 0, 0xFFFFFFFF, GDT_CODE_PL3, granularity);     // User Code Segment
+  gdt_set_gate(4, 0, 0xFFFFFFFF, GDT_DATA_PL3, granularity);     // User Data Segment
 
   gdt_flush((uint32_t)&gdt_pointer);
 }
