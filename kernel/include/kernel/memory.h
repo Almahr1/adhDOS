@@ -17,6 +17,7 @@
 #define MAGIC_ALLOC 0xDEADBEEF
 #define MAGIC_FREE  0xFEEDFACE
 #define POISON_BYTE 0xAA
+#define MAX_EMPTY_SLABS_PER_CACHE 1
 
 typedef struct free_block {
     struct free_block *next;

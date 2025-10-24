@@ -27,8 +27,9 @@ uint8_t get_order(size_t size) {
 }
 
 static bool is_address_aligned(uint32_t addr, uint8_t order) {
-    uint32_t block_size = MIN_BLOCK_SIZE << order;
-    return (addr & (block_size - 1)) == 0;
+  uint32_t block_size = MIN_BLOCK_SIZE << order;
+  uint32_t relative_addr = addr - memory_start;
+  return (relative_addr & (block_size - 1)) == 0;
 }
 
 uint32_t get_buddy_addr(uint32_t addr, uint8_t order) {
@@ -417,6 +418,12 @@ static slab_t *slab_create(cache_t *cache) {
   return slab;
 }
 
+static void slab_destroy(cache_t *cache, slab_t *slab) {
+  cache->total_slabs--;
+  cache->total_objects -= cache->objects_per_slab;
+  pmm_free_page((uint32_t)slab);
+}
+
 void *cache_alloc(cache_t *cache) {
   if (!cache) return NULL;
 
@@ -536,18 +543,26 @@ void cache_free(cache_t *cache, void *ptr) {
     cache->partial_slabs = slab;
   }
 
-  // If slab is now empty, move to empty list
   if (slab->free_count == cache->objects_per_slab) {
-    // Remove from partial list
     if (slab->next) slab->next->prev = slab->prev;
     if (slab->prev) slab->prev->next = slab->next;
     else cache->partial_slabs = slab->next;
 
-    // Add to empty list
-    slab->next = cache->empty_slabs;
-    slab->prev = NULL;
-    if (cache->empty_slabs) cache->empty_slabs->prev = slab;
-    cache->empty_slabs = slab;
+    uint32_t empty_count = 0;
+    slab_t *s = cache->empty_slabs;
+    while (s) {
+      empty_count++;
+      s = s->next;
+    }
+
+    if (empty_count < MAX_EMPTY_SLABS_PER_CACHE) {
+      slab->next = cache->empty_slabs;
+      slab->prev = NULL;
+      if (cache->empty_slabs) cache->empty_slabs->prev = slab;
+      cache->empty_slabs = slab;
+    } else {
+      slab_destroy(cache, slab);
+    }
   }
 }
 
