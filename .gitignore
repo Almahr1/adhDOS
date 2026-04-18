@@ -2,3 +2,4 @@
 isodir
 sysroot
 .claude/agents
+compile_commands.json
