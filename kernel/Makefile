@@ -30,6 +30,8 @@ LIBS:=$(LIBS) $(KERNEL_ARCH_LIBS)
 KERNEL_OBJS=\
 $(KERNEL_ARCH_OBJS) \
 kernel/kernel.o \
+kernel/process.o \
+kernel/scheduler.o \
 
 OBJS=\
 $(ARCHDIR)/boot/crti.o \
@@ -52,6 +54,17 @@ $(ARCHDIR)/boot/crtn.o \
 
 all: adhDOS.kernel
 
+# Generate assembly offsets header
+$(ARCHDIR)/asm_offsets.h: $(ARCHDIR)/gen_offsets.c include/kernel/process.h include/kernel/paging.h
+	@echo "Generating assembly offsets..."
+	@gcc -m32 -Iinclude -I../libc/include -o $(ARCHDIR)/gen_offsets $(ARCHDIR)/gen_offsets.c
+	@$(ARCHDIR)/gen_offsets > $(ARCHDIR)/asm_offsets.h
+	@rm -f $(ARCHDIR)/gen_offsets
+	@echo "Generated $(ARCHDIR)/asm_offsets.h"
+
+# Assembly files depend on offsets header
+$(ARCHDIR)/cpu/idt_asm.o: $(ARCHDIR)/asm_offsets.h
+
 adhDOS.kernel: $(OBJS) $(ARCHDIR)/linker.ld
 	$(CC) -T $(ARCHDIR)/linker.ld -o $@ $(CFLAGS) $(LINK_LIST)
 	grub-file --is-x86-multiboot adhDOS.kernel
@@ -69,6 +82,7 @@ clean:
 	rm -f adhDOS.kernel
 	rm -f $(OBJS) *.o */*.o */*/*.o */*/*/*.o
 	rm -f $(OBJS:.o=.d) *.d */*.d */*/*.d */*/*/*.d
+	rm -f $(ARCHDIR)/asm_offsets.h $(ARCHDIR)/gen_offsets
 
 install: install-headers install-kernel
 

@@ -1,6 +1,7 @@
 #include <kernel/idt.h>
 #include <kernel/keyboard.h>
 #include <kernel/paging.h>
+#include <kernel/sched.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -46,24 +47,30 @@ static const char *exception_messages[] = {"Division By Zero",
 
 static volatile uint32_t timer_ticks = 0;
 
-void isr_handler(struct registers regs) {
-  if (regs.int_no == 14) {
-    uint32_t faulting_addr;
-    asm volatile("mov %%cr2, %0" : "=r"(faulting_addr));
-    page_fault_handler(regs.err_code, faulting_addr);
+void isr_handler(struct registers *regs) {
+  // Handle INT 0x80 - Software interrupt for process yield
+  if (regs->int_no == 128) {
+    schedule();  // Trigger context switch
     return;
   }
 
-  if (regs.int_no < 32) {
-    printf("Exception: %s (INT %d)\n", exception_messages[regs.int_no],
-           regs.int_no);
+  if (regs->int_no == 14) {
+    uint32_t faulting_addr;
+    asm volatile("mov %%cr2, %0" : "=r"(faulting_addr));
+    page_fault_handler(regs->err_code, faulting_addr);
+    return;
+  }
 
-    if (regs.err_code != 0) {
-      printf("Error Code: 0x%x\n", regs.err_code);
+  if (regs->int_no < 32) {
+    printf("Exception: %s (INT %d)\n", exception_messages[regs->int_no],
+           regs->int_no);
+
+    if (regs->err_code != 0) {
+      printf("Error Code: 0x%x\n", regs->err_code);
     }
 
-    printf("EIP: 0x%08x, CS: 0x%x, EFLAGS: 0x%08x\n", regs.eip, regs.cs,
-           regs.eflags);
+    printf("EIP: 0x%08x, CS: 0x%x, EFLAGS: 0x%08x\n", regs->eip, regs->cs,
+           regs->eflags);
 
     for (;;) {
       asm volatile("hlt");
@@ -71,15 +78,18 @@ void isr_handler(struct registers regs) {
   }
 }
 
-void irq_handler(struct registers regs) {
-  uint8_t irq_num = regs.int_no - 32;
+void irq_handler(struct registers *regs) {
+  uint8_t irq_num = regs->int_no - 32;
+
+  if (regs->int_no >= 40) {
+    asm volatile("outb %0, %1" : : "a"((uint8_t)0x20), "Nd"((uint16_t)0xA0));
+  }
+  asm volatile("outb %0, %1" : : "a"((uint8_t)0x20), "Nd"((uint16_t)0x20));
 
   switch (irq_num) {
   case 0:
     timer_ticks++;
-    if (timer_ticks % 100 == 0) {
-      printf("Timer tick: %d\n", timer_ticks);
-    }
+    scheduler_tick();
     break;
 
   case 1:
@@ -90,11 +100,6 @@ void irq_handler(struct registers regs) {
     printf("IRQ %d received\n", irq_num);
     break;
   }
-
-  if (regs.int_no >= 40) {
-    asm volatile("outb %0, %1" : : "a"((uint8_t)0x20), "Nd"((uint16_t)0xA0));
-  }
-  asm volatile("outb %0, %1" : : "a"((uint8_t)0x20), "Nd"((uint16_t)0x20));
 }
 
 uint32_t timer_get_ticks(void) { return timer_ticks; }

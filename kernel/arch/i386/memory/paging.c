@@ -75,11 +75,14 @@ void paging_init(void) {
 }
 
 address_space_t *paging_create_address_space(void) {
+  printf("paging_create_address_space: allocating space struct\n");
   address_space_t *space = (address_space_t *)kmalloc(sizeof(address_space_t));
   if (!space)
     return NULL;
 
+  printf("paging_create_address_space: allocating page directory\n");
   uint32_t dir_phys = pmm_alloc_page();
+  printf("paging_create_address_space: got physical addr 0x%08x\n", dir_phys);
   if (!dir_phys) {
     kfree(space);
     return NULL;
@@ -87,7 +90,18 @@ address_space_t *paging_create_address_space(void) {
 
   space->directory = (page_directory_t *)dir_phys;
   space->physical_addr = dir_phys;
+  printf("paging_create_address_space: about to memset at 0x%08x\n", (uint32_t)space->directory);
   memset(space->directory, 0, sizeof(page_directory_t));
+  printf("paging_create_address_space: memset done\n");
+
+  uint32_t kernel_end_dir = PAGE_DIR_INDEX((uint32_t)&kernel_end);
+  printf("paging_create_address_space: copying kernel entries 0-%d and 768-1023\n", kernel_end_dir);
+
+  for (int i = 0; i <= kernel_end_dir + 32; i++) {
+    if ((*kernel_space.directory)[i] & PAGE_PRESENT) {
+      (*space->directory)[i] = (*kernel_space.directory)[i];
+    }
+  }
 
   for (int i = 768; i < TABLES_PER_DIR; i++) {
     (*space->directory)[i] = (*kernel_space.directory)[i];
@@ -100,7 +114,13 @@ void paging_destroy_address_space(address_space_t *space) {
   if (!space || space == &kernel_space)
     return;
 
+  uint32_t kernel_end_dir = PAGE_DIR_INDEX((uint32_t)&kernel_end);
+
   for (int i = 0; i < 768; i++) {
+    if (i <= kernel_end_dir + 32) {
+      continue;
+    }
+
     uint32_t dir_entry = (*space->directory)[i];
     if (dir_entry & PAGE_PRESENT) {
       page_table_t *table =

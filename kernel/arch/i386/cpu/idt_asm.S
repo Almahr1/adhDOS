@@ -1,3 +1,5 @@
+#include "../asm_offsets.h"
+
 .section .text
 
 # Declare external C handlers
@@ -23,8 +25,53 @@ isr_common_stub:
     mov %ax, %fs
     mov %ax, %gs
 
+    push %esp                # Pass pointer to registers struct
     call isr_handler         # Call C handler
+    add $4, %esp             # Clean up parameter
 
+    # Check if task switch was scheduled (next_task_ptr != NULL)
+    .extern next_task_ptr
+    mov (next_task_ptr), %eax   # EAX = Next Task Pointer
+    test %eax, %eax
+    jz .isr_no_switch
+
+    # ---------------------------------------------------------
+    # SAVE CURRENT TASK STATE
+    # ---------------------------------------------------------
+    .extern current_task
+    mov (current_task), %edx    # EDX = Current Task Pointer
+    test %edx, %edx
+    jz .isr_load_next
+
+    mov %esp, TASK_CONTEXT_ESP(%edx)  # Save ESP to current_task->context.esp
+
+.isr_load_next:
+    # ---------------------------------------------------------
+    # SWITCH STACK
+    # ---------------------------------------------------------
+    mov TASK_CONTEXT_ESP(%eax), %esp  # Switch to new task's saved stack pointer
+
+    # ---------------------------------------------------------
+    # SWITCH ADDRESS SPACE (CR3)
+    # ---------------------------------------------------------
+    mov TASK_MM(%eax), %ecx           # ECX = task->mm
+    test %ecx, %ecx                   # Safety check: is mm NULL?
+    jz .isr_skip_cr3
+
+    mov ADDRSPACE_PHYSICAL_ADDR(%ecx), %ecx  # ECX = mm->physical_addr
+    mov %cr3, %edx           # EDX = Current CR3
+    cmp %ecx, %edx           # Compare current vs new
+    je .isr_skip_cr3         # If identical, skip reload (saves TLB flush)
+
+    mov %ecx, %cr3           # Load new Page Directory (Flushes TLB)
+
+.isr_skip_cr3:
+    # ---------------------------------------------------------
+
+    # Clear next_task_ptr to indicate switch is done
+    movl $0, (next_task_ptr)
+
+.isr_no_switch:
     pop %ebx                 # Restore data segment
     mov %bx, %ds
     mov %bx, %es
@@ -92,6 +139,13 @@ ISR_NOERRCODE 30  # Reserved
 ISR_NOERRCODE 31  # Reserved
 
 # ============================================================================
+# SOFTWARE INTERRUPTS
+# ============================================================================
+
+# INT 0x80 (128) - System call / Yield interrupt
+ISR_NOERRCODE 128
+
+# ============================================================================
 # IRQ STUBS (Hardware Interrupts 32-47)
 # ============================================================================
 
@@ -110,8 +164,53 @@ irq_common_stub:
     mov %ax, %fs
     mov %ax, %gs
 
+    push %esp                # Pass pointer to registers struct
     call irq_handler         # Call C handler
+    add $4, %esp             # Clean up parameter
 
+    # Check if task switch was scheduled
+    .extern next_task_ptr
+    mov (next_task_ptr), %eax   # EAX = Next Task Pointer
+    test %eax, %eax
+    jz .no_switch
+
+    # ---------------------------------------------------------
+    # SAVE CURRENT TASK STATE
+    # ---------------------------------------------------------
+    .extern current_task
+    mov (current_task), %edx    # EDX = Current Task Pointer
+    test %edx, %edx
+    jz .irq_load_next
+
+    mov %esp, TASK_CONTEXT_ESP(%edx)  # Save ESP to current_task->context.esp
+
+.irq_load_next:
+    # ---------------------------------------------------------
+    # SWITCH STACK
+    # ---------------------------------------------------------
+    mov TASK_CONTEXT_ESP(%eax), %esp  # Switch to new task's saved stack pointer
+
+    # ---------------------------------------------------------
+    # SWITCH ADDRESS SPACE (CR3)
+    # ---------------------------------------------------------
+    mov TASK_MM(%eax), %ecx           # ECX = task->mm
+    test %ecx, %ecx                   # Safety check
+    jz .irq_skip_cr3
+
+    mov ADDRSPACE_PHYSICAL_ADDR(%ecx), %ecx  # ECX = mm->physical_addr
+    mov %cr3, %edx           # EDX = Current CR3
+    cmp %ecx, %edx           # Compare current vs new
+    je .irq_skip_cr3         # If identical, skip reload
+
+    mov %ecx, %cr3           # Load new Page Directory (Flushes TLB)
+
+.irq_skip_cr3:
+    mov %eax, (current_task)
+
+    # Clear next_task_ptr to indicate switch is done
+    movl $0, (next_task_ptr)
+
+.no_switch:
     pop %ebx                 # Restore data segment
     mov %bx, %ds
     mov %bx, %es
@@ -133,23 +232,23 @@ irq_common_stub:
         jmp irq_common_stub
 .endm
 
-# Create all 16 IRQ handlers (IRQ 0-15 mapped to vectors 32-47)
+# Create all 16 IRQ handlers
 IRQ 0, 32    # Timer
 IRQ 1, 33    # Keyboard
-IRQ 2, 34    # Cascade (never raised)
+IRQ 2, 34    # Cascade
 IRQ 3, 35    # COM2
 IRQ 4, 36    # COM1
 IRQ 5, 37    # LPT2
 IRQ 6, 38    # Floppy disk
 IRQ 7, 39    # LPT1
 IRQ 8, 40    # CMOS real-time clock
-IRQ 9, 41    # Free for peripherals / legacy SCSI / NIC
-IRQ 10, 42   # Free for peripherals / SCSI / NIC
-IRQ 11, 43   # Free for peripherals / SCSI / NIC
+IRQ 9, 41    # Free for peripherals
+IRQ 10, 42   # Free for peripherals
+IRQ 11, 43   # Free for peripherals
 IRQ 12, 44   # PS/2 Mouse
-IRQ 13, 45   # FPU / Coprocessor / Inter-processor
-IRQ 14, 46   # Primary ATA Hard Disk
-IRQ 15, 47   # Secondary ATA Hard Disk
+IRQ 13, 45   # FPU
+IRQ 14, 46   # Primary ATA
+IRQ 15, 47   # Secondary ATA
 
 # ============================================================================
 # IDT Flush Function

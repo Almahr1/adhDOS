@@ -72,6 +72,9 @@ extern void isr29(void);  // Reserved
 extern void isr30(void);  // Reserved
 extern void isr31(void);  // Reserved
 
+// Software interrupts
+extern void isr128(void); // INT 0x80 - System call / Yield
+
 // IRQ handlers (hardware interrupts - declared in isr.c)
 extern void irq0(void);   // Timer
 extern void irq1(void);   // Keyboard

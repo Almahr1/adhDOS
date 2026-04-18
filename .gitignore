@@ -1,5 +1,4 @@
 *.iso
 isodir
 sysroot
-CLAUDE.md
 .claude/agents

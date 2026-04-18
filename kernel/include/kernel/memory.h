@@ -36,6 +36,7 @@ typedef struct slab {
     uint16_t free_count;
     uint16_t total_count;
     uint32_t magic;
+    struct cache *cache;      // Back-pointer to owning cache (for kfree)
     struct slab *next;
     struct slab *prev;
 } slab_t;

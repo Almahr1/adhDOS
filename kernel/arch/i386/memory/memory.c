@@ -395,6 +395,7 @@ static slab_t *slab_create(cache_t *cache) {
   slab->magic = MAGIC_ALLOC;
   slab->total_count = cache->objects_per_slab;
   slab->free_count = cache->objects_per_slab;
+  slab->cache = cache;  // Store back-pointer to cache for kfree()
   slab->next = NULL;
   slab->prev = NULL;
 
@@ -693,12 +694,24 @@ void kfree(void *ptr) {
     pmm_free_pages(addr, order);
   }
   #else
-  // Without debug info, assume it's from slab if aligned to page
+  // Without debug info, determine allocation type from alignment
   uint32_t addr = (uint32_t)ptr;
   if ((addr & (PAGE_SIZE - 1)) != 0) {
-    // Likely from slab, but we don't know which cache
-    printf("WARNING: Cannot free slab object without debug info\n");
+    // Not page-aligned - must be a slab object
+    // Find the slab by masking address to page boundary
+    slab_t *slab = (slab_t*)(addr & ~(PAGE_SIZE - 1));
+
+    // Verify slab is valid and has cache back-pointer
+    if (slab->magic == MAGIC_ALLOC && slab->cache) {
+      cache_free(slab->cache, ptr);
+    } else {
+      printf("ERROR: Corrupt or invalid slab at %p (magic=0x%x)\n",
+             ptr, slab->magic);
+    }
   } else {
+    // Page-aligned - from buddy allocator
+    // Note: We don't know the order, so we assume order 0 (single page)
+    // This is a limitation of non-debug mode
     pmm_free_pages(addr, 0);
   }
   #endif
