@@ -6,7 +6,7 @@
 #include <string.h>
 
 task_t *process_table[MAX_PROCESSES];
-extern task_t *current_task = NULL;
+task_t *current_task = NULL;
 task_t *idle_process = NULL;
 static int next_pid = 1;
 
@@ -171,12 +171,10 @@ void process_exit(int exit_code) {
   printf("Process %d (%s) exiting with code %d\n", current->pid, current->name,
          exit_code);
 
-  schedule();
-  
-  process_yield(); 
+  schedule(true);
 
   for (;;)
-    ;
+    asm volatile("hlt");
 }
 
 void process_yield(void) {
@@ -229,28 +227,18 @@ task_t *process_get_by_pid(int pid) {
 
 // Reaper.... Awww Man!
 void reaper_task(void) {
-  bool reaped_any = false;
   while (1) {
-    for (int i = 0; i < MAX_PROCESSES; i++){
+    bool reaped_any = false;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
       task_t *task = process_table[i];
-      if (task != NULL && task->state == TASK_ZOMBIE){
-
-        printf("Reaper: Killing Task (%d)", task->pid);
-
-        if (task->mm){
-          paging_destroy_address_space(task->mm);
-        }
-        if (task->kernel_stack){
-          kfree(task->kernel_stack);
-        }
-
-        kfree(task);
-        process_table[i] = NULL;
+      if (task && task->state == TASK_ZOMBIE) {
+        printf("Reaper: Killing Task (%d)\n", task->pid);
+        process_destroy(task);
         reaped_any = true;
       }
     }
-  }
-  if (!reaped_any){
-    process_yield();
+    if (!reaped_any) {
+      process_yield();
+    }
   }
 }

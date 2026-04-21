@@ -68,6 +68,9 @@ isr_common_stub:
 .isr_skip_cr3:
     # ---------------------------------------------------------
 
+    # Update current_task to the new task
+    mov %eax, (current_task)
+
     # Clear next_task_ptr to indicate switch is done
     movl $0, (next_task_ptr)
 

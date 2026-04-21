@@ -1,6 +1,7 @@
 #include <kernel/sched.h>
 #include <kernel/process.h>
 #include <kernel/serial.h>
+#include <stdint.h>
 #include <stdio.h>
 
 static task_t *ready_queue_head = NULL;
@@ -8,8 +9,18 @@ static task_t *ready_queue_tail = NULL;
 static bool scheduler_enabled = false;
 
 // Global pointer for task switching - accessed by assembly code
-// When set to non-NULL, assembly stub will switch to this task's stack
-extern volatile task_t *next_task_ptr = NULL;
+volatile task_t *next_task_ptr = NULL;
+
+extern task_t *idle_process;
+extern uint32_t timer_get_ticks(void);
+
+static inline void irq_save_disable(uint32_t *flags) {
+    asm volatile("pushf; cli; pop %0" : "=r"(*flags) :: "memory");
+}
+
+static inline void irq_restore(uint32_t flags) {
+    asm volatile("push %0; popf" :: "r"(flags) : "memory", "cc");
+}
 
 void scheduler_init(void) {
     ready_queue_head = NULL;
@@ -22,6 +33,9 @@ void scheduler_enqueue(task_t *task) {
         return;
     }
 
+    uint32_t flags;
+    irq_save_disable(&flags);
+
     task->next = NULL;
     task->prev = ready_queue_tail;
 
@@ -32,10 +46,15 @@ void scheduler_enqueue(task_t *task) {
     }
 
     ready_queue_tail = task;
+
+    irq_restore(flags);
 }
 
 void scheduler_dequeue(task_t *task) {
     if (!task) return;
+
+    uint32_t flags;
+    irq_save_disable(&flags);
 
     if (task->prev) {
         task->prev->next = task->next;
@@ -51,29 +70,29 @@ void scheduler_dequeue(task_t *task) {
 
     task->next = NULL;
     task->prev = NULL;
+
+    irq_restore(flags);
 }
 
 task_t* scheduler_pick_next(void) {
     task_t *current = process_current();
-    task_t *next = ready_queue_head;
 
-    printf("scheduler_pick_next: current PID=%d, ready_queue_head PID=%d\n",
-           current ? current->pid : -1,
-           next ? next->pid : -1);
-
-    if (!next) {
-        printf("  No tasks in ready queue, staying with current\n");
-        return current;
+    if (!ready_queue_head) {
+        return idle_process ? idle_process : current;
     }
 
-    if (next == current && next->next) {
-        next = next->next;
-        printf("  Current is at head, picking next: PID=%d\n", next->pid);
-    } else {
-        printf("  Picking head: PID=%d\n", next->pid);
+    // Pick the highest-priority (lowest number) task, skipping current
+    // so we don't stay on the same task when others are ready.
+    task_t *best = NULL;
+    for (task_t *t = ready_queue_head; t; t = t->next) {
+        if (t == current) continue;
+        if (!best || t->priority < best->priority) {
+            best = t;
+        }
     }
 
-    return next;
+    // Only current is in the queue - run it again.
+    return best ? best : current;
 }
 
 static int tick_count = 0;
@@ -106,7 +125,7 @@ void scheduler_tick(void) {
     }
 }
 
-void schedule(void) {
+void schedule(bool voluntary) {
     if (!scheduler_enabled) {
         return;
     }
@@ -114,34 +133,26 @@ void schedule(void) {
     task_t *prev = process_current();
     task_t *next = scheduler_pick_next();
 
-    if (!prev || !next) {
-        serial_writestring(COM1, "schedule: prev or next is NULL\n");
+    if (!prev || !next || prev == next) {
         return;
     }
 
-    if (prev == next) {
-        return;
-    }
-
-    serial_writestring(COM1, "SCHED: Switching tasks\n");
-
-    if (prev && prev->state == TASK_RUNNING) {
+    if (prev->state == TASK_RUNNING) {
         scheduler_dequeue(prev);
         scheduler_enqueue(prev);
         prev->time_remaining = prev->time_slice;
     }
 
-    if (next) {
-        next->time_remaining = next->time_slice;
-    }
+    next->time_remaining = next->time_slice;
+    next->stats.exec_start = timer_get_ticks();
 
-    if (prev != next) {
+    if (voluntary) {
+        prev->stats.nvcsw++;
+    } else {
         prev->stats.nivcsw++;
-        next->stats.exec_start = 0;
-
-        serial_writestring(COM1, "SCHED: Setting next_task_ptr for context switch\n");
-        next_task_ptr = next;
     }
+
+    next_task_ptr = next;
 }
 
 void resched_current(void) {
@@ -149,5 +160,5 @@ void resched_current(void) {
     if (current) {
         current->time_remaining = 0;
     }
-    schedule();
+    schedule(false);
 }

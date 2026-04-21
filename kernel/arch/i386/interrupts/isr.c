@@ -50,7 +50,7 @@ static volatile uint32_t timer_ticks = 0;
 void isr_handler(struct registers *regs) {
   // Handle INT 0x80 - Software interrupt for process yield
   if (regs->int_no == 128) {
-    schedule();  // Trigger context switch
+    schedule(true);
     return;
   }
 
