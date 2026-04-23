@@ -48,6 +48,7 @@ struct task_struct {
 
     int policy;
     int priority;
+    int queue_level;
     int time_slice;
     int time_remaining;
     struct sched_stats stats;

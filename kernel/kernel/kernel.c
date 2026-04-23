@@ -35,7 +35,7 @@ void test_task_2(void) {
     printf("Task 2: Loop %d of 3...\n", i);
     
     // Delay loop
-    for (volatile int j = 0; j < 5000000; j++);
+    for (volatile int j = 0; j < 25000; j++);
   }
 
   printf("Task 2: Calling process_exit(123) now!\n");

@@ -58,6 +58,7 @@ task_t *process_create(const char *name, void (*entry_point)(void),
   task->state = TASK_RUNNING;
   task->policy = SCHED_NORMAL;
   task->priority = priority;
+  task->queue_level = (priority == IDLE_PRIORITY) ? NUM_QUEUES - 1 : 0;
   task->time_slice = DEFAULT_TIME_SLICE;
   task->time_remaining = task->time_slice;
 
@@ -183,7 +184,7 @@ void process_yield(void) {
 
 void process_print_all(void) {
   printf("\n=== Process Table ===\n");
-  printf("PID\tName\t\tState\tPriority\n");
+  printf("PID\tName\t\tState\tPrio\tQ\n");
 
   for (int i = 0; i < MAX_PROCESSES; i++) {
     task_t *task = process_table[i];
@@ -210,7 +211,7 @@ void process_print_all(void) {
         break;
       }
 
-      printf("%d\t%s\t\t%s\t%d\n", task->pid, task->name, state_str, task->priority);
+      printf("%d\t%s\t\t%s\tp=%d\tq=%d\n", task->pid, task->name, state_str, task->priority, task->queue_level);
     }
   }
   printf("=====================\n\n");
