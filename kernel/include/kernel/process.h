@@ -9,6 +9,10 @@
 #define TASK_NAME_MAX 32
 #define KERNEL_STACK_SIZE 8192
 
+#define USER_CODE_VA      0x00400000
+#define USER_STACK_TOP    0xC0000000
+#define USER_STACK_BOTTOM (USER_STACK_TOP - 0x1000)
+
 typedef enum {
     TASK_RUNNING = 0,
     TASK_INTERRUPTIBLE,
@@ -49,6 +53,7 @@ struct task_struct {
     int policy;
     int priority;
     int queue_level;
+    bool is_user;
     int time_slice;
     int time_remaining;
     struct sched_stats stats;
@@ -69,6 +74,7 @@ typedef struct task_struct task_t;
 
 void process_init(void);
 task_t* process_create(const char *name, void (*entry_point)(void), int priority);
+task_t* process_create_user(const char *name, uint32_t entry_va, int priority);
 void process_destroy(task_t *task);
 task_t* process_current(void);
 void process_set_current(task_t *task);

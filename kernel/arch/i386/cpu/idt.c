@@ -85,7 +85,7 @@ void idt_init(void) {
   idt_set_gate(47, (uint32_t)irq15, KERNEL_CODE_SEGMENT, IDT_INT_GATE_32);
 
   // Install software interrupt for process yield (INT 0x80)
-  idt_set_gate(128, (uint32_t)isr128, KERNEL_CODE_SEGMENT, IDT_INT_GATE_32);
+  idt_set_gate(128, (uint32_t)isr128, KERNEL_CODE_SEGMENT, IDT_INT_GATE_USER);
 
   // Load the IDT
   idt_flush((uint32_t)&idt_pointer);

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+#define SYSCALL_YIELD  0
 #define SYSCALL_EXIT   1
 #define SYSCALL_READ   3
 #define SYSCALL_WRITE  4

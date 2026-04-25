@@ -22,3 +22,11 @@ gdt_flush:
 
 .flush_cs:
     ret
+
+.global tss_flush
+.type tss_flush, @function
+
+tss_flush:
+    movw $TSS_SELECTOR, %ax
+    ltr %ax
+    ret

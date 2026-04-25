@@ -5,6 +5,36 @@
 /* Only include these when compiling C code, not assembly */
 #include <stdint.h>
 
+struct tss_entry {                                                                                                                                                
+      uint32_t prev_tss;   // unused                                                                                                                                  
+      uint32_t esp0;       // kernel stack pointer, updated on every context switch
+      uint32_t ss0;        // kernel stack segment, always 0x10, set once                                                                                            
+      uint32_t esp1;       // unused (ring 1 stack)                                                                                                                   
+      uint32_t ss1;        // unused                                                                                                                                  
+      uint32_t esp2;       // unused (ring 2 stack)                                                                                                                   
+      uint32_t ss2;        // unused                                                                                                                                  
+      uint32_t cr3;        // unused                                                                                                   
+      uint32_t eip;        // unused
+      uint32_t eflags;     // unused                                                                                                                                  
+      uint32_t eax;        // unused
+      uint32_t ecx;        // unused                                                                                                                                  
+      uint32_t edx;        // unused                                                                                                                                  
+      uint32_t ebx;        // unused
+      uint32_t esp;        // unused                                                                                                                                  
+      uint32_t ebp;        // unused
+      uint32_t esi;        // unused                                                                                                                                  
+      uint32_t edi;        // unused
+      uint32_t es;         // unused                                                                                                                                  
+      uint32_t cs;         // unused
+      uint32_t ss;         // unused                                                                                                                                  
+      uint32_t ds;         // unused
+      uint32_t fs;         // unused                                                                                                                                  
+      uint32_t gs;         // unused
+      uint32_t ldt;        // unused
+      uint16_t trap;       // unused                                                                                                                                  
+      uint16_t iomap_base; // note: set to sizeof(tss_entry) to disable I/O permission bitmap
+  } __attribute__((packed));     
+
 struct gdt_entry {
     uint16_t limit_low;
     uint16_t base_low;
@@ -50,14 +80,17 @@ struct gdt_ptr {
 #define GDT_DATA_PL3  (GDT_ACCESS_PRESENT | GDT_ACCESS_PRIV_RING3 | \
                        GDT_ACCESS_CODE_DATA | GDT_ACCESS_RW)
 
+
 void gdt_init(void);
+void tss_set_kernel_stack(uint32_t esp);
 
 #endif /* __ASSEMBLER__ */
 
 /* These segment selector definitions can be used in both C and assembly */
 #define KERNEL_CODE_SEGMENT 0x08
 #define KERNEL_DATA_SEGMENT 0x10
-#define USER_CODE_SEGMENT   0x18
-#define USER_DATA_SEGMENT   0x20
+#define USER_CODE_SEGMENT   0x1B
+#define USER_DATA_SEGMENT   0x23
+#define TSS_SELECTOR        0x28
 
 #endif /* GDT_H */

@@ -1,5 +1,6 @@
 #include <kernel/sched.h>
 #include <kernel/process.h>
+#include <kernel/gdt.h>
 #include <kernel/serial.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -184,6 +185,7 @@ void schedule(bool voluntary) {
 
     next->time_remaining = queue_slices[next->queue_level];
     next->stats.exec_start = timer_get_ticks();
+    tss_set_kernel_stack((uint32_t)next->kernel_stack + KERNEL_STACK_SIZE);
 
     if (prev) {
         if (voluntary)

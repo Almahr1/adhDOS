@@ -2,6 +2,7 @@
 #include <kernel/keyboard.h>
 #include <kernel/paging.h>
 #include <kernel/sched.h>
+#include <kernel/syscall.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -48,9 +49,11 @@ static const char *exception_messages[] = {"Division By Zero",
 static volatile uint32_t timer_ticks = 0;
 
 void isr_handler(struct registers *regs) {
-  // Handle INT 0x80 - Software interrupt for process yield
   if (regs->int_no == 128) {
-    schedule(true);
+    if (regs->eax == SYSCALL_YIELD)
+      schedule(true);
+    else
+      syscall_handler(regs->eax, regs->ebx, regs->ecx, regs->edx, regs->esi, regs->edi);
     return;
   }
 

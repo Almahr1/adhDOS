@@ -1,15 +1,12 @@
 #include <kernel/gdt.h>
 #include <kernel/idt.h>
+#include <kernel/process.h>
 #include <kernel/syscall.h>
 #include <kernel/tty.h>
 #include <stdio.h>
 
-extern void syscall_entry(void);
-
 static int sys_exit(int status) {
-  printf("Process exit with status: %d\n", status);
-  for (;;)
-    asm volatile("hlt");
+  process_exit(status);
   return 0;
 }
 
@@ -57,7 +54,5 @@ void syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx,
 }
 
 void syscall_init(void) {
-  idt_set_gate(0x80, (uint32_t)syscall_entry, KERNEL_CODE_SEGMENT,
-               IDT_INT_GATE_USER);
-  printf("System call handler installed (INT 0x80)\n");
+  printf("Syscall handler ready (INT 0x80, DPL=3)\n");
 }

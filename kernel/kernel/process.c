@@ -1,3 +1,4 @@
+#include <kernel/gdt.h>
 #include <kernel/memory.h>
 #include <kernel/paging.h>
 #include <kernel/process.h>
@@ -138,6 +139,91 @@ task_t *process_create(const char *name, void (*entry_point)(void),
   return task;
 }
 
+task_t *process_create_user(const char *name, uint32_t entry_va, int priority) {
+  if (next_pid >= MAX_PROCESSES)
+    return NULL;
+
+  task_t *task = (task_t *)kmalloc(sizeof(task_t));
+  if (!task)
+    return NULL;
+
+  memset(task, 0, sizeof(task_t));
+
+  task->pid = next_pid++;
+  strncpy(task->name, name, TASK_NAME_MAX - 1);
+  task->name[TASK_NAME_MAX - 1] = '\0';
+
+  task->state = TASK_RUNNING;
+  task->policy = SCHED_NORMAL;
+  task->priority = priority;
+  task->queue_level = 0;
+  task->is_user = true;
+  task->time_slice = DEFAULT_TIME_SLICE;
+  task->time_remaining = task->time_slice;
+
+  task->kernel_stack = kmalloc(KERNEL_STACK_SIZE);
+  if (!task->kernel_stack) {
+    kfree(task);
+    return NULL;
+  }
+
+  task->mm = paging_create_address_space();
+  if (!task->mm) {
+    kfree(task->kernel_stack);
+    kfree(task);
+    return NULL;
+  }
+
+  uint32_t user_stack_phys = pmm_alloc_page();
+  if (!user_stack_phys) {
+    paging_destroy_address_space(task->mm);
+    kfree(task->kernel_stack);
+    kfree(task);
+    return NULL;
+  }
+  paging_map_page(task->mm, USER_STACK_BOTTOM, user_stack_phys,
+                  PAGE_PRESENT | PAGE_WRITE | PAGE_USER);
+
+  uint32_t *stack = (uint32_t *)((char *)task->kernel_stack + KERNEL_STACK_SIZE);
+
+  *--stack = USER_DATA_SEGMENT;
+  *--stack = USER_STACK_TOP - 4;
+  *--stack = 0x202;
+  *--stack = USER_CODE_SEGMENT;
+  *--stack = entry_va;
+
+  *--stack = 0;
+  *--stack = 0;
+
+  *--stack = 0;
+  *--stack = 0;
+  *--stack = 0;
+  *--stack = 0;
+  *--stack = 0;
+  *--stack = 0;
+  *--stack = 0;
+  *--stack = 0;
+
+  *--stack = USER_DATA_SEGMENT;
+
+  task->context.esp = (uint32_t)stack;
+  task->context.eip = entry_va;
+  task->context.eflags = 0x202;
+  task->context.cs = USER_CODE_SEGMENT;
+  task->context.ds = USER_DATA_SEGMENT;
+  task->context.ss = USER_DATA_SEGMENT;
+
+  for (int i = 0; i < MAX_PROCESSES; i++) {
+    if (process_table[i] == NULL) {
+      process_table[i] = task;
+      break;
+    }
+  }
+
+  scheduler_enqueue(task);
+  return task;
+}
+
 void process_destroy(task_t *task) {
   if (!task)
     return;
@@ -174,17 +260,18 @@ void process_exit(int exit_code) {
 
   schedule(true);
 
+  asm volatile("sti");
   for (;;)
     asm volatile("hlt");
 }
 
 void process_yield(void) {
-  asm volatile("int $0x80");
+  asm volatile("movl $0, %%eax; int $0x80" ::: "eax", "memory");
 }
 
 void process_print_all(void) {
   printf("\n=== Process Table ===\n");
-  printf("PID\tName\t\tState\tPrio\tQ\n");
+  printf("PID\tName\t\tState\tMode\tPrio\tQ\n");
 
   for (int i = 0; i < MAX_PROCESSES; i++) {
     task_t *task = process_table[i];
@@ -211,7 +298,8 @@ void process_print_all(void) {
         break;
       }
 
-      printf("%d\t%s\t\t%s\tp=%d\tq=%d\n", task->pid, task->name, state_str, task->priority, task->queue_level);
+      printf("%d\t%s\t\t%s\t%s\tp=%d\tq=%d\n", task->pid, task->name, state_str,
+             task->is_user ? "U" : "K", task->priority, task->queue_level);
     }
   }
   printf("=====================\n\n");
